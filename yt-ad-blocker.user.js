@@ -10,6 +10,7 @@
 // @homepageURL       https://github.com/TonyD365/YT-Ad-Blocker
 // @supportURL        https://github.com/TonyD365/YT-Ad-Blocker/issues
 // @match             https://www.youtube.com/*
+// @match             https://youtube.com/*
 // @match             https://m.youtube.com/*
 // @match             https://music.youtube.com/*
 // @match             https://www.youtube-nocookie.com/*
