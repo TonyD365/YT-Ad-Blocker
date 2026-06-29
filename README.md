@@ -55,7 +55,8 @@ The script runs at **`@run-at document-start`** so its network hooks are install
 - Patches `unsafeWindow.fetch` and `unsafeWindow.XMLHttpRequest`, and defines a getter/setter over the inline `ytInitialPlayerResponse` global.
 - For requests to `/youtubei/v1/player` and `/youtubei/v1/next`, it deletes the ad-carrying fields from the JSON: `adPlacements`, `playerAds`, `adSlots`, `adBreakHeartbeatParams` (including a nested `playerResponse`).
 - `fetch` responses are `clone()`d, rewritten, and returned as a new `Response` with `content-length` dropped (the body shrank). XHR responses are rewritten by shadowing `responseText` / `response`.
-- **Only ad fields are removed** — stream URLs and player config are left untouched, so playback is unaffected.
+- **Bypasses the "Ad blockers violate YouTube's Terms of Service" full-player gate** — when YouTube flips `playabilityStatus.status` to `ERROR` / `UNPLAYABLE` while still serving stream data (the in-player enforcement screen), the status is restored to `OK` and `errorScreen` / `auxiliaryUi.messageRenderers.enforcementMessageViewModel` are cleared, so playback proceeds. Real failures (private, removed, region-blocked) lack `streamingData` and pass through untouched.
+- **Only ad and enforcement fields are touched** — stream URLs and player config are left intact, so playback is unaffected.
 
 #### 2. Video-ad skipper (DOM fallback)
 
@@ -179,7 +180,8 @@ YouTube 用**三种**不同方式投放广告，因此本脚本组合了**三种
 - 改写 `unsafeWindow.fetch` 与 `unsafeWindow.XMLHttpRequest`，并对页面内联的全局变量 `ytInitialPlayerResponse` 定义读写访问器。
 - 对 `/youtubei/v1/player` 与 `/youtubei/v1/next` 的请求，从 JSON 中删除承载广告的字段：`adPlacements`、`playerAds`、`adSlots`、`adBreakHeartbeatParams`（含嵌套的 `playerResponse`）。
 - `fetch` 响应会被 `clone()`、改写后以新的 `Response` 返回，并删除 `content-length`（正文变短了）；XHR 响应则通过遮蔽 `responseText` / `response` 改写。
-- **只删除广告字段** —— 流地址与播放器配置原样保留，因此不影响播放。
+- **绕过"广告拦截器违反 YouTube 服务条款"全屏封锁页** —— 当 YouTube 把 `playabilityStatus.status` 置为 `ERROR`/`UNPLAYABLE` 但仍下发流数据时（in-player 封锁页），将其恢复为 `OK` 并清除 `errorScreen` 与 `auxiliaryUi.messageRenderers.enforcementMessageViewModel`，让播放继续。真实失败（私享、已删除、地区限制）因缺少 `streamingData` 而保持原样。
+- **只动广告与封锁相关字段** —— 流地址与播放器配置原样保留，因此不影响播放。
 
 #### 2. 视频广告跳过（DOM 兜底）
 
