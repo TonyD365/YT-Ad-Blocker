@@ -2,7 +2,7 @@
 // @name              YT-Ad-Blocker
 // @name:zh-CN        YouTube 广告拦截器
 // @namespace         https://github.com/TonyD365/YT-Ad-Blocker
-// @version           1.1.0
+// @version           1.2.0
 // @description       Block and hide ads on YouTube (banners, overlays, masthead and promoted content).
 // @description:zh-CN 拦截并隐藏 YouTube 广告（横幅、浮层、首页大图以及推广内容）。
 // @author            TonyD365
@@ -72,21 +72,32 @@
     return data;
   }
 
-  // When YouTube flips playability to ERROR/UNPLAYABLE to enforce ad-blocking
-  // (the full-player "Ad blockers violate YouTube's Terms of Service" gate)
-  // but still ships streamingData, restore the status so the player just plays.
-  // Real failures (private, removed, region-blocked) lack streamingData and
-  // pass through unchanged.
+  // Undo YouTube's ad-block enforcement on the response.
+  // `auxiliaryUi.messageRenderers.enforcementMessageViewModel` is enforcement-
+  // specific (the name says so), so its presence is a smoking-gun signal: when
+  // it's there, restore status to OK and drop errorScreen unconditionally, no
+  // matter what status the response claimed. The streamingData-guarded path
+  // remains as a fallback for older response shapes.
+  // Real failures (private, removed, region-blocked) carry neither the
+  // enforcement marker nor streamingData and pass through unchanged.
   function normalizePlayability(obj) {
     const ps = obj.playabilityStatus;
+    const aux = obj.auxiliaryUi && obj.auxiliaryUi.messageRenderers;
+    if (aux && aux.enforcementMessageViewModel) {
+      delete aux.enforcementMessageViewModel;
+      if (ps) {
+        ps.status = 'OK';
+        delete ps.errorScreen;
+        delete ps.reason;
+        delete ps.subreason;
+      }
+      return;
+    }
     if (ps && (ps.status === 'ERROR' || ps.status === 'UNPLAYABLE') && obj.streamingData) {
       ps.status = 'OK';
       delete ps.errorScreen;
       delete ps.reason;
       delete ps.subreason;
-    }
-    if (obj.auxiliaryUi && obj.auxiliaryUi.messageRenderers) {
-      delete obj.auxiliaryUi.messageRenderers.enforcementMessageViewModel;
     }
   }
 
@@ -108,7 +119,7 @@
 
     const origFetch = w.fetch;
     if (typeof origFetch === 'function') {
-      w.fetch = function (input, init) {
+      const hookedFetch = function (input, init) {
         const promise = origFetch.apply(this, arguments);
         const url = (typeof input === 'string') ? input : (input && input.url) || '';
         if (!isPlayerUrl(url) || !active('blockNetwork')) return promise;
@@ -127,6 +138,7 @@
           }).catch(() => resp);
         });
       };
+      try { w.fetch = hookedFetch; } catch (e) { /* fetch may be locked by anti-adblock script */ }
     }
 
     const OrigXHR = w.XMLHttpRequest;
@@ -159,7 +171,7 @@
       };
       Hooked.prototype = OrigXHR.prototype;
       Object.setPrototypeOf(Hooked, OrigXHR);
-      w.XMLHttpRequest = Hooked;
+      try { w.XMLHttpRequest = Hooked; } catch (e) { /* XHR may be locked by anti-adblock script */ }
     }
 
     // The first player response is also inlined in the page as a global; intercept the assignment.
@@ -259,6 +271,8 @@
     function clean() {
       if (!active('removePopups')) return;
       let removed = false;
+
+      // Popup-style enforcement (small dialog overlays).
       document.querySelectorAll('ytd-enforcement-message-view-model').forEach((el) => {
         (el.closest('tp-yt-paper-dialog') || el).remove();
         removed = true;
@@ -267,6 +281,19 @@
       document.querySelectorAll('tp-yt-paper-toast#toast').forEach((toast) => {
         if (toast.querySelector('a[href*="blocker"], a[href*="ad_blocker"]')) { toast.remove(); removed = true; }
       });
+
+      // Full-player enforcement (the in-player block page that replaces the video).
+      // yt-playability-error-supported-renderers is the wrapper YouTube uses for
+      // this enforcement; #error-screen is the player's generic error host, so
+      // only remove it when it clearly hosts the enforcement renderer.
+      document.querySelectorAll('yt-playability-error-supported-renderers').forEach((el) => {
+        el.remove(); removed = true;
+      });
+      const errorScreen = document.querySelector('#error-screen');
+      if (errorScreen && errorScreen.querySelector('ytd-enforcement-message-view-model, yt-playability-error-supported-renderers')) {
+        errorScreen.remove(); removed = true;
+      }
+
       if (!removed) return;
       if (document.body && document.body.style.overflow === 'hidden') document.body.style.overflow = '';
       const video = document.querySelector('video.html5-main-video, video.video-stream');
