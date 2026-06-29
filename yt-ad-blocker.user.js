@@ -2,7 +2,7 @@
 // @name              YT-Ad-Blocker
 // @name:zh-CN        YouTube 广告拦截器
 // @namespace         https://github.com/TonyD365/YT-Ad-Blocker
-// @version           1.0.0
+// @version           1.1.0
 // @description       Block and hide ads on YouTube (banners, overlays, masthead and promoted content).
 // @description:zh-CN 拦截并隐藏 YouTube 广告（横幅、浮层、首页大图以及推广内容）。
 // @author            TonyD365
@@ -64,10 +64,30 @@
   function stripAds(data) {
     if (!data || typeof data !== 'object') return data;
     for (const key of AD_KEYS) if (key in data) delete data[key];
+    normalizePlayability(data);
     if (data.playerResponse && typeof data.playerResponse === 'object') {
       for (const key of AD_KEYS) if (key in data.playerResponse) delete data.playerResponse[key];
+      normalizePlayability(data.playerResponse);
     }
     return data;
+  }
+
+  // When YouTube flips playability to ERROR/UNPLAYABLE to enforce ad-blocking
+  // (the full-player "Ad blockers violate YouTube's Terms of Service" gate)
+  // but still ships streamingData, restore the status so the player just plays.
+  // Real failures (private, removed, region-blocked) lack streamingData and
+  // pass through unchanged.
+  function normalizePlayability(obj) {
+    const ps = obj.playabilityStatus;
+    if (ps && (ps.status === 'ERROR' || ps.status === 'UNPLAYABLE') && obj.streamingData) {
+      ps.status = 'OK';
+      delete ps.errorScreen;
+      delete ps.reason;
+      delete ps.subreason;
+    }
+    if (obj.auxiliaryUi && obj.auxiliaryUi.messageRenderers) {
+      delete obj.auxiliaryUi.messageRenderers.enforcementMessageViewModel;
+    }
   }
 
   function cleanJson(text) {
